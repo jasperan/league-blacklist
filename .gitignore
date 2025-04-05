@@ -172,3 +172,29 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# League blacklist configs
+config.json
+blacklist.csv
+puuid_cache.json
+
+# Cache files
+puuid_cache.json
+config.json
+
+# Blacklist file
+blacklist.csv
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
