@@ -359,7 +359,6 @@ def main():
                                                             st.rerun()
                                                         else:
                                                             st.warning(message)
-                                                            # Keep form open if there was an error
                                                     
                                                     if col_cancel.button("Cancel", key=f"cancel_{player_id}_{i}_blue"):
                                                         # Remove form from session state
@@ -560,171 +559,156 @@ def main():
     with tab3:
         # Live Game Checker
         st.header("Live Game Checker")
-        st.markdown("Check your current game for blacklisted players")
+        st.markdown("Check if any players in a live game are in your blacklist")
         
-        # Form for live game search
+        # Create a form for live game search
         with st.form(key="live_game_form"):
-            live_summoner_name = st.text_input("Summoner Name", 
-                                           value=last_username if last_username else "",
-                                           placeholder="Enter your summoner name")
-            live_tagline = st.text_input("Tagline", 
-                                      value=last_tagline if last_tagline else "",
-                                      placeholder="EUW, NA, etc.")
-            
-            check_button = st.form_submit_button("Check Current Game", 
-                                              use_container_width=True, 
-                                              type="primary")
+            live_summoner_name = st.text_input("Summoner Name", value=st.session_state.get('last_username', ''))
+            live_summoner_tag = st.text_input("Tagline (e.g., EUW)", value=st.session_state.get('last_tagline', ''))
+            auto_refresh = st.checkbox("Auto-refresh (every 30s)", value=True)
+            submitted = st.form_submit_button("Check Live Game", type="primary")
         
-        # Auto-refresh option
-        auto_refresh = st.checkbox("Auto refresh (every 30 seconds)")
+        # Add a manual refresh button outside the form
+        if auto_refresh and 'live_summoner' in st.session_state:
+            st.button("🔄 Refresh Now", on_click=lambda: None)  # This will cause a rerun when clicked
         
-        if check_button or (auto_refresh and 'last_live_search' in st.session_state):
-            # Save the search parameters for auto-refresh
-            if check_button:
-                st.session_state.last_live_search = {
-                    'name': live_summoner_name,
-                    'tagline': live_tagline
-                }
-            
-            # Get the search parameters (either new or from session state)
-            if auto_refresh and 'last_live_search' in st.session_state:
-                live_summoner_name = st.session_state.last_live_search['name']
-                live_tagline = st.session_state.last_live_search['tagline']
-            
-            # Check if we have a blacklist manager
-            if not st.session_state.blacklist_manager:
-                if api_key_input:
-                    st.session_state.blacklist_manager = BlacklistManager(api_key=api_key_input, region=region_input)
+        if submitted or ('live_summoner' in st.session_state and auto_refresh):
+            try:
+                # Get the summoner data
+                if submitted:
+                    # New search, so fetch summoner data
+                    live_summoner = st.session_state.blacklist_manager.get_summoner(
+                        live_summoner_name, live_summoner_tag
+                    )
+                    st.session_state.live_summoner = live_summoner
                 else:
-                    st.error("Please set up your API key first")
-                    st.stop()
-            
-            # Perform the live game check
-            if live_summoner_name:
-                try:
-                    with st.spinner("Checking live game..."):
-                        # Get summoner info
-                        live_summoner = st.session_state.blacklist_manager.get_summoner(
-                            live_summoner_name, live_tagline)
-                        
-                        # Check current match
-                        current_match = st.session_state.blacklist_manager.get_current_match(live_summoner)
-                        
-                        if current_match:
-                            # Get all players and check against blacklist
-                            blacklisted_players = st.session_state.blacklist_manager.check_current_match_for_blacklisted(live_summoner)
-                            
-                            # Display game info
-                            st.success(f"Found active game! Queue type: {current_match.get('gameQueueConfigId', 'Unknown')}")
-                            
-                            # Log participant structure for debugging
-                            if 'participants' in current_match and len(current_match['participants']) > 0:
-                                st.session_state.live_game_debug = True
-                                first_player = current_match['participants'][0]
-                                st.text(f"Participant data structure: {list(first_player.keys())}")
-                            
-                            # Create two columns for blue and red team
-                            team_cols = st.columns(2)
-                            
-                            # Group participants by team
-                            blue_team = [p for p in current_match['participants'] if p.get('teamId', p.get('team', '')) == 100]
-                            red_team = [p for p in current_match['participants'] if p.get('teamId', p.get('team', '')) == 200]
-                            
-                            # Show blue team
-                            with team_cols[0]:
-                                st.markdown("### 🔵 Blue Team")
-                                for player in blue_team:
-                                    # Check if blacklisted
-                                    player_id = player.get('summonerId', player.get('id', ''))
-                                    is_blacklisted = st.session_state.blacklist_manager.is_blacklisted(player_id)
-                                    
-                                    # Get summoner name using v5 API field names
-                                    summoner_name = player.get('summonerName', 
-                                                   player.get('name', 
-                                                   player.get('riotIdGameName', 'Unknown Player')))
-                                    
-                                    # Get champion name if possible - otherwise use ID
-                                    champion = player.get('championName', player.get('championId', 'Unknown'))
-                                    
-                                    # Get tagline if available from player data
-                                    tagline = player.get('riotIdTagline', '')
-                                    tag_display = f"#{tagline}" if tagline else ""
-                                    
-                                    # Display player info with blacklist indicator
-                                    if is_blacklisted:
-                                        st.markdown(f"⚠️ **{summoner_name}{tag_display}** - {champion}")
-                                        
-                                        # Get reason from blacklist
-                                        blacklist = st.session_state.blacklist_manager.get_blacklist()
-                                        player_info = blacklist[blacklist['summoner_id'] == player_id].iloc[0]
-                                        reason = player_info['reason']
-                                        st.caption(f"Reason: {reason}")
-                                    else:
-                                        st.markdown(f"**{summoner_name}{tag_display}** - {champion}")
-                            
-                            # Show red team
-                            with team_cols[1]:
-                                st.markdown("### 🔴 Red Team")
-                                for player in red_team:
-                                    # Check if blacklisted
-                                    player_id = player.get('summonerId', player.get('id', ''))
-                                    is_blacklisted = st.session_state.blacklist_manager.is_blacklisted(player_id)
-                                    
-                                    # Get summoner name using v5 API field names
-                                    summoner_name = player.get('summonerName', 
-                                                   player.get('name', 
-                                                   player.get('riotIdGameName', 'Unknown Player')))
-                                    
-                                    # Get champion name if possible - otherwise use ID
-                                    champion = player.get('championName', player.get('championId', 'Unknown'))
-                                    
-                                    # Get tagline if available from player data
-                                    tagline = player.get('riotIdTagline', '')
-                                    tag_display = f"#{tagline}" if tagline else ""
-                                    
-                                    # Display player info with blacklist indicator
-                                    if is_blacklisted:
-                                        st.markdown(f"⚠️ **{summoner_name}{tag_display}** - {champion}")
-                                        
-                                        # Get reason from blacklist
-                                        blacklist = st.session_state.blacklist_manager.get_blacklist()
-                                        player_info = blacklist[blacklist['summoner_id'] == player_id].iloc[0]
-                                        reason = player_info['reason']
-                                        st.caption(f"Reason: {reason}")
-                                    else:
-                                        st.markdown(f"**{summoner_name}{tag_display}** - {champion}")
-                            
-                            # Display summary of blacklisted players
-                            if blacklisted_players:
-                                st.markdown("### ⚠️ Blacklisted Players Summary")
-                                for player in blacklisted_players:
-                                    # The summoner_name already includes the tagline from our BlacklistManager changes
-                                    st.warning(
-                                        f"**{player['summoner_name']}** - {player['champion']}\n\n"
-                                        f"Reason: {player['reason']}\n\n"
-                                        f"Added: {player['date_added']}"
-                                    )
-                            else:
-                                st.success("No blacklisted players found in this game! 👍")
-                        else:
-                            st.info(f"{live_summoner_name} is not currently in a game. Check again when they're in a match.")
+                    # Use cached summoner data for auto-refresh
+                    live_summoner = st.session_state.live_summoner
                 
-                except Exception as e:
-                    # Only show error if it's not a simple "not in game" issue
-                    if "not in a game" not in str(e) and "Could not find summoner" not in str(e):
-                        st.error(f"Error: {str(e)}")
+                # Check current match
+                current_match = st.session_state.blacklist_manager.get_current_match(live_summoner)
+                
+                if current_match:
+                    # Get all players and check against blacklist
+                    blacklisted_players = st.session_state.blacklist_manager.check_current_match_for_blacklisted(live_summoner)
+                    
+                    # Display game info
+                    st.success(f"Found active game! Queue type: {current_match.get('gameQueueConfigId', 'Unknown')}")
+                    
+                    # Log participant structure for debugging
+                    if 'participants' in current_match and len(current_match['participants']) > 0:
+                        st.session_state.live_game_debug = True
+                        first_player = current_match['participants'][0]
+                        st.text(f"Participant data structure: {list(first_player.keys())}")
+                    
+                    # Create two columns for blue and red team
+                    team_cols = st.columns(2)
+                    
+                    # Group participants by team
+                    blue_team = [p for p in current_match['participants'] if p.get('teamId', p.get('team', '')) == 100]
+                    red_team = [p for p in current_match['participants'] if p.get('teamId', p.get('team', '')) == 200]
+                    
+                    # Show blue team
+                    with team_cols[0]:
+                        st.markdown("### 🔵 Blue Team")
+                        for player in blue_team:
+                            # Check if blacklisted
+                            player_id = player.get('summonerId', player.get('id', ''))
+                            is_blacklisted = st.session_state.blacklist_manager.is_blacklisted(player_id)
+                            
+                            # Get summoner name using v5 API field structure
+                            if 'riotId' in player:
+                                # v5 API has riotId object
+                                riot_id = player.get('riotId', {})
+                                summoner_name = riot_id.get('gameName', 'Unknown Player')
+                                tagline = riot_id.get('tagLine', '')
+                            else:
+                                # Try other fields that might contain the name
+                                summoner_name = player.get('summonerName', 
+                                             player.get('name', 
+                                             player.get('riotIdGameName', 'Unknown Player')))
+                                tagline = player.get('riotIdTagline', '')
+                            
+                            # Get champion name if possible - otherwise use ID
+                            champion = player.get('championName', player.get('championId', 'Unknown'))
+                            
+                            # Format the tag display
+                            tag_display = f"#{tagline}" if tagline else ""
+                            
+                            # Display player info with blacklist indicator
+                            if is_blacklisted:
+                                st.markdown(f"⚠️ **{summoner_name}{tag_display}** - {champion}")
+                                
+                                # Get reason from blacklist
+                                blacklist = st.session_state.blacklist_manager.get_blacklist()
+                                player_info = blacklist[blacklist['summoner_id'] == player_id].iloc[0]
+                                reason = player_info['reason']
+                                st.caption(f"Reason: {reason}")
+                            else:
+                                st.markdown(f"**{summoner_name}{tag_display}** - {champion}")
+                    
+                    # Show red team
+                    with team_cols[1]:
+                        st.markdown("### 🔴 Red Team")
+                        for player in red_team:
+                            # Check if blacklisted
+                            player_id = player.get('summonerId', player.get('id', ''))
+                            is_blacklisted = st.session_state.blacklist_manager.is_blacklisted(player_id)
+                            
+                            # Get summoner name using v5 API field structure
+                            if 'riotId' in player:
+                                # v5 API has riotId object
+                                riot_id = player.get('riotId', {})
+                                summoner_name = riot_id.get('gameName', 'Unknown Player')
+                                tagline = riot_id.get('tagLine', '')
+                            else:
+                                # Try other fields that might contain the name
+                                summoner_name = player.get('summonerName', 
+                                             player.get('name', 
+                                             player.get('riotIdGameName', 'Unknown Player')))
+                                tagline = player.get('riotIdTagline', '')
+                            
+                            # Get champion name if possible - otherwise use ID
+                            champion = player.get('championName', player.get('championId', 'Unknown'))
+                            
+                            # Format the tag display
+                            tag_display = f"#{tagline}" if tagline else ""
+                            
+                            # Display player info with blacklist indicator
+                            if is_blacklisted:
+                                st.markdown(f"⚠️ **{summoner_name}{tag_display}** - {champion}")
+                                
+                                # Get reason from blacklist
+                                blacklist = st.session_state.blacklist_manager.get_blacklist()
+                                player_info = blacklist[blacklist['summoner_id'] == player_id].iloc[0]
+                                reason = player_info['reason']
+                                st.caption(f"Reason: {reason}")
+                            else:
+                                st.markdown(f"**{summoner_name}{tag_display}** - {champion}")
+                    
+                    # Display summary of blacklisted players
+                    if blacklisted_players:
+                        st.markdown("### ⚠️ Blacklisted Players Summary")
+                        for player in blacklisted_players:
+                            # The summoner_name already includes the tagline from our BlacklistManager changes
+                            st.warning(
+                                f"**{player['summoner_name']}** - {player['champion']}\n\n"
+                                f"Reason: {player['reason']}\n\n"
+                                f"Added: {player['date_added']}"
+                            )
                     else:
-                        st.info(str(e))
-            else:
-                st.error("Please enter a summoner name")
+                        st.success("No blacklisted players found in this game! 👍")
+                else:
+                    st.info(f"{live_summoner_name} is not currently in a game. Check again when they're in a match.")
             
-            # Handle auto-refresh
-            if auto_refresh:
-                refresh_placeholder = st.empty()
-                for seconds in range(30, 0, -1):
-                    refresh_placeholder.info(f"Refreshing in {seconds} seconds...")
-                    time.sleep(1)
-                st.rerun()
+            except Exception as e:
+                # Only show error if it's not a simple "not in game" issue
+                if "not in a game" not in str(e) and "Could not find summoner" not in str(e):
+                    st.error(f"Error: {str(e)}")
+                else:
+                    st.info(str(e))
+        else:
+            st.info("Enter a summoner name to check their current game")
     
     with tab4:
         # Help tab content

@@ -318,10 +318,18 @@ class BlacklistManager:
             # Extract summoner ID - spectator v5 uses different field names
             summoner_id = participant.get('summonerId', participant.get('id', ''))
             
-            # Get summoner name - spectator v5 uses different field names
-            summoner_name = participant.get('summonerName', 
-                           participant.get('name', 
-                           participant.get('riotIdGameName', 'Unknown Player')))
+            # Extract summoner name - spectator v5 uses riotId structure
+            if 'riotId' in participant:
+                # v5 API has riotId object
+                riot_id = participant.get('riotId', {})
+                summoner_name = riot_id.get('gameName', 'Unknown Player')
+                tagline = riot_id.get('tagLine', '')
+            else:
+                # Try other fields that might contain the name
+                summoner_name = participant.get('summonerName', 
+                              participant.get('name', 
+                              participant.get('riotIdGameName', 'Unknown Player')))
+                tagline = participant.get('riotIdTagline', '')
             
             if summoner_id in blacklist['summoner_id'].values:
                 blacklisted_info = blacklist[blacklist['summoner_id'] == summoner_id].iloc[0]
@@ -329,9 +337,9 @@ class BlacklistManager:
                 # Get champion information - use name if available, otherwise ID
                 champion = participant.get('championName', participant.get('championId', 'Unknown'))
                 
-                # Get tagline if available
-                tagline = blacklisted_info.get('tagline', '')
-                tag_display = f"#{tagline}" if tagline else ""
+                # Get tagline from either participant or blacklist
+                player_tagline = tagline or blacklisted_info.get('tagline', '')
+                tag_display = f"#{player_tagline}" if player_tagline else ""
                 
                 blacklisted_players.append({
                     'summoner_id': summoner_id,

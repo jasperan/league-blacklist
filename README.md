@@ -5,6 +5,8 @@ A system for tracking and blacklisting League of Legends players. The applicatio
 1. View your match history and blacklist players you don't want to play with
 2. Check your current game to see if any blacklisted players are in the match
 
+![homepage](./img/homepage.png)
+
 ## Features
 
 - **Match History Browser**: View your recent matches and add problematic players to your blacklist
